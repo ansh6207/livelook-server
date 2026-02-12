@@ -1,18 +1,38 @@
 import express from "express";
 import cors from "cors";
+import pkg from "agora-access-token";
+
+const { RtcTokenBuilder, RtcRole } = pkg;
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// In-memory channel storage
+/* ---------------- ENV VARIABLES ---------------- */
+
+const APP_ID = process.env.AGORA_APP_ID;
+const APP_CERTIFICATE = process.env.AGORA_APP_CERTIFICATE;
+
+if (!APP_ID || !APP_CERTIFICATE) {
+  console.error("Missing AGORA_APP_ID or AGORA_APP_CERTIFICATE");
+}
+
+/* ---------------- CHANNEL STATE ---------------- */
+
 const channels = {
   WA_SEATTLE: { isLive: false, broadcasterId: null, startTime: null },
   CA_SANTA_MONICA: { isLive: false, broadcasterId: null, startTime: null },
   NY_TIMES_SQUARE: { isLive: false, broadcasterId: null, startTime: null }
 };
 
-// Check channel status
+/* ---------------- ROOT ROUTE ---------------- */
+
+app.get("/", (req, res) => {
+  res.send("LiveLook server is running 🚀");
+});
+
+/* ---------------- STATUS ---------------- */
+
 app.get("/status", (req, res) => {
   const { channel } = req.query;
 
@@ -23,7 +43,8 @@ app.get("/status", (req, res) => {
   res.json(channels[channel]);
 });
 
-// Request to start broadcast
+/* ---------------- START BROADCAST ---------------- */
+
 app.post("/start", (req, res) => {
   const { channel, userId } = req.body;
 
@@ -31,20 +52,21 @@ app.post("/start", (req, res) => {
     return res.status(400).json({ error: "Invalid channel" });
   }
 
-  const channelData = channels[channel];
+  const data = channels[channel];
 
-  if (channelData.isLive) {
+  if (data.isLive) {
     return res.json({ allowed: false });
   }
 
-  channelData.isLive = true;
-  channelData.broadcasterId = userId;
-  channelData.startTime = Date.now();
+  data.isLive = true;
+  data.broadcasterId = userId;
+  data.startTime = Date.now();
 
   res.json({ allowed: true });
 });
 
-// End broadcast
+/* ---------------- END BROADCAST ---------------- */
+
 app.post("/end", (req, res) => {
   const { channel } = req.body;
 
@@ -52,14 +74,45 @@ app.post("/end", (req, res) => {
     return res.status(400).json({ error: "Invalid channel" });
   }
 
-  channels[channel].isLive = false;
-  channels[channel].broadcasterId = null;
-  channels[channel].startTime = null;
+  channels[channel] = { isLive: false, broadcasterId: null, startTime: null };
 
   res.json({ success: true });
 });
 
-// Auto-timeout safety (2 minutes)
+/* ---------------- RTC TOKEN GENERATION ---------------- */
+
+app.get("/rtc-token", (req, res) => {
+  const { channel, role, userId } = req.query;
+
+  if (!channel || !channels[channel]) {
+    return res.status(400).json({ error: "Invalid channel" });
+  }
+
+  const uid = userId ? parseInt(userId) : Math.floor(Math.random() * 100000);
+
+  let agoraRole =
+    role === "broadcaster"
+      ? RtcRole.PUBLISHER
+      : RtcRole.SUBSCRIBER;
+
+  const expirationTimeInSeconds = 120; // 2 minutes
+  const currentTime = Math.floor(Date.now() / 1000);
+  const privilegeExpireTime = currentTime + expirationTimeInSeconds;
+
+  const token = RtcTokenBuilder.buildTokenWithUid(
+    APP_ID,
+    APP_CERTIFICATE,
+    channel,
+    uid,
+    agoraRole,
+    privilegeExpireTime
+  );
+
+  res.json({ token, uid });
+});
+
+/* ---------------- AUTO TIMEOUT SAFETY ---------------- */
+
 setInterval(() => {
   const now = Date.now();
 
@@ -70,16 +123,21 @@ setInterval(() => {
       const elapsed = now - data.startTime;
 
       if (elapsed > 120000) {
-        data.isLive = false;
-        data.broadcasterId = null;
-        data.startTime = null;
+        channels[channel] = {
+          isLive: false,
+          broadcasterId: null,
+          startTime: null
+        };
         console.log(`Auto-ended broadcast for ${channel}`);
       }
     }
   }
 }, 10000);
 
+/* ---------------- START SERVER ---------------- */
+
 const PORT = process.env.PORT || 10000;
+
 app.listen(PORT, () => {
   console.log(`LiveLook server running on port ${PORT}`);
 });
