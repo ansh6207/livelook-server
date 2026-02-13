@@ -22,7 +22,15 @@ if (!APP_ID || !APP_CERTIFICATE) {
 const channels = {
   WA_SEATTLE: { isLive: false, broadcasterId: null, startTime: null },
   CA_SANTA_MONICA: { isLive: false, broadcasterId: null, startTime: null },
-  NY_TIMES_SQUARE: { isLive: false, broadcasterId: null, startTime: null }
+  NY_TIMES_SQUARE: { isLive: false, broadcasterId: null, startTime: null },
+
+  FR_PARIS: { isLive: false, broadcasterId: null, startTime: null },
+  IT_ROME: { isLive: false, broadcasterId: null, startTime: null },
+  JP_TOKYO: { isLive: false, broadcasterId: null, startTime: null },
+  AU_SYDNEY: { isLive: false, broadcasterId: null, startTime: null },
+  AE_DUBAI: { isLive: false, broadcasterId: null, startTime: null },
+  BR_RIO: { isLive: false, broadcasterId: null, startTime: null },
+  CN_BEIJING: { isLive: false, broadcasterId: null, startTime: null }
 };
 
 /* ---------------- ROOT ROUTE ---------------- */
@@ -70,9 +78,14 @@ app.post("/start", (req, res) => {
 app.post("/end", (req, res) => {
   const { channel } = req.body;
 
-  if (!channel || !channels[channel]) {
+  if (!channel) {
     return res.status(400).json({ error: "Invalid channel" });
   }
+
+  if (!channels[channel]) {
+    channels[channel] = { isLive: false, broadcasterId: null, startTime: null };
+  }
+
 
   channels[channel] = { isLive: false, broadcasterId: null, startTime: null };
 
@@ -84,8 +97,12 @@ app.post("/end", (req, res) => {
 app.get("/rtc-token", (req, res) => {
   const { channel, role, userId } = req.query;
 
-  if (!channel || !channels[channel]) {
+  if (!channel) {
     return res.status(400).json({ error: "Invalid channel" });
+  }
+
+  if (!channels[channel]) {
+    channels[channel] = { isLive: false, broadcasterId: null, startTime: null };
   }
 
   const uid = userId ? parseInt(userId) : Math.floor(Math.random() * 100000);
