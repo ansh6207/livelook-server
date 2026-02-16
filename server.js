@@ -1,6 +1,19 @@
 import express from "express";
 import cors from "cors";
 import pkg from "agora-access-token";
+import fs from "fs";
+import bcrypt from "bcrypt";
+import { v4 as uuidv4 } from "uuid";
+
+const USERS_FILE = "./users.json";
+
+function readDatabase() {
+  return JSON.parse(fs.readFileSync(USERS_FILE));
+}
+
+function writeDatabase(data) {
+  fs.writeFileSync(USERS_FILE, JSON.stringify(data, null, 2));
+}
 
 const { RtcTokenBuilder, RtcRole } = pkg;
 
@@ -37,6 +50,77 @@ const channels = {
 
 app.get("/", (req, res) => {
   res.send("LiveLook server is running 🚀");
+});
+
+app.post("/signup", async (req, res) => {
+  const { username, password } = req.body;
+
+  if (!username || !password) {
+    return res.status(400).json({ error: "Missing fields" });
+  }
+
+  const db = readDatabase();
+
+  const exists = db.users.find(u => u.username === username);
+  if (exists) {
+    return res.status(400).json({ error: "Username already exists" });
+  }
+
+  const hashedPassword = await bcrypt.hash(password, 10);
+
+  db.users.push({
+    username,
+    password: hashedPassword,
+    created: Date.now()
+  });
+
+  writeDatabase(db);
+
+  res.json({ success: true });
+});
+
+app.post("/login", async (req, res) => {
+  const { username, password } = req.body;
+
+  const db = readDatabase();
+
+  const user = db.users.find(u => u.username === username);
+
+  if (!user) {
+    return res.status(400).json({ error: "Invalid username or password" });
+  }
+
+  const valid = await bcrypt.compare(password, user.password);
+
+  if (!valid) {
+    return res.status(400).json({ error: "Invalid username or password" });
+  }
+
+  const token = uuidv4();
+
+  db.sessions.push({
+    token,
+    username,
+    created: Date.now()
+  });
+
+  writeDatabase(db);
+
+  res.json({ success: true, token, username });
+});
+
+app.get("/verify", (req, res) => {
+  const { token } = req.query;
+
+  const db = readDatabase();
+
+  const session = db.sessions.find(s => s.token === token);
+
+  if (!session) {
+    return res.status(401).json({ valid: false });
+  }
+
+  res.json({ valid: true, username: session.username });
 });
 
 /* ---------------- STATUS ---------------- */
